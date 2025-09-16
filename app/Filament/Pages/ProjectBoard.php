@@ -14,7 +14,6 @@ use App\Filament\Actions\ExportTicketsAction;
 use App\Exports\TicketsExport;
 use Maatwebsite\Excel\Facades\Excel;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Cache;
 
 class ProjectBoard extends Page
 {
@@ -46,20 +45,27 @@ class ProjectBoard extends Page
     public function mount($project_id = null): void
     {
         if (auth()->user()->hasRole(['super_admin'])) {
-            $this->projects = Project::select('id', 'name', 'description')->get();
+            $this->projects = Project::all();
         } else {
-            $this->projects = auth()->user()->projects()->select('projects.id', 'projects.name', 'projects.description')->get();
+            $this->projects = auth()->user()->projects;
         }
 
-        if ($project_id && $this->projects->contains('id', $project_id)) {
+        if ($project_id) {
             $this->selectedProjectId = (int) $project_id;
-            $this->selectedProject = $this->projects->firstWhere('id', $project_id);
+            $this->selectedProject = Project::find($project_id);
             $this->loadTicketStatuses();
-        } elseif ($this->projects->isNotEmpty() && ! is_null($project_id)) {
-            Notification::make()
-                ->title('Project Not Found')
-                ->danger()
-                ->send();
+        } else {
+            $this->ticketStatuses = collect();
+        }
+    }
+
+    public function updatedSelectedProjectId($value): void
+    {
+        if ($value) {
+            $this->selectProject($value);
+        } else {
+            $this->selectedProject = null;
+            $this->ticketStatuses = collect();
             $this->redirect(static::getUrl());
         }
     }
@@ -69,30 +75,13 @@ class ProjectBoard extends Page
         $this->selectedTicket = null;
         $this->ticketStatuses = collect();
         $this->selectedProjectId = $projectId;
-        
-        $this->selectedProject = $this->projects->firstWhere('id', $projectId);
-        
-        if (!$this->selectedProject) {
-            $this->selectedProject = Project::select('id', 'name', 'description')->find($projectId);
-        }
+        $this->selectedProject = Project::find($projectId);
 
         if ($this->selectedProject) {
             $url = static::getUrl(['project_id' => $projectId]);
             $this->redirect($url);
 
             $this->loadTicketStatuses();
-        }
-    }
-
-    public function updatedSelectedProjectId($value): void
-    {
-        if ($value) {
-            $this->selectProject((int) $value);
-        } else {
-            $this->selectedProject = null;
-            $this->ticketStatuses = collect();
-
-            $this->redirect(static::getUrl());
         }
     }
 
@@ -104,28 +93,22 @@ class ProjectBoard extends Page
             return;
         }
     
-        $cacheKey = "project_board_{$this->selectedProject->id}_" . auth()->id() . "_" . 
-                   ($this->selectedProject->tickets()->max('updated_at') ?? 'empty');
-        
-        $this->ticketStatuses = Cache::remember($cacheKey, 300, function () {
-            // Optimized query with proper eager loading to prevent N+1 problems
-            return $this->selectedProject->ticketStatuses()
-                ->with([
-                    'tickets' => function ($query) {
-                        $query->with([
-                            'assignees:id,name',
-                            'status:id,name,color,is_completed',
-                            'priority:id,name,color',
-                            'creator:id,name'
-                        ])
-                        ->select('id', 'project_id', 'ticket_status_id', 'priority_id', 'name', 'description', 'uuid', 'due_date', 'created_at', 'updated_at', 'created_by')
-                        ->orderBy('id', 'asc');
-                    }
-                ])
-                ->select('id', 'project_id', 'name', 'color', 'sort_order', 'is_completed')
-                ->orderBy('sort_order')
-                ->get();
-        });
+        $this->ticketStatuses = $this->selectedProject->ticketStatuses()
+            ->with([
+                'tickets' => function ($query) {
+                    $query->with([
+                        'assignees:id,name',
+                        'status:id,name,color,is_completed',
+                        'priority:id,name,color',
+                        'creator:id,name'
+                    ])
+                    ->select('id', 'project_id', 'ticket_status_id', 'priority_id', 'name', 'description', 'uuid', 'due_date', 'created_at', 'updated_at', 'created_by')
+                    ->orderBy('id', 'asc');
+                }
+            ])
+            ->select('id', 'project_id', 'name', 'color', 'sort_order', 'is_completed')
+            ->orderBy('sort_order')
+            ->get();
             
         $this->ticketStatuses->each(function ($status) {
             $sortOrder = $this->sortOrders[$status->id] ?? 'date_created_newest';
@@ -180,8 +163,6 @@ class ProjectBoard extends Page
                 'ticket_status_id' => $newStatusId,
             ]);
 
-            // Clear cache after ticket update
-            $this->clearProjectBoardCache();
             $this->loadTicketStatuses();
 
             $this->dispatch('ticket-updated');
@@ -196,29 +177,8 @@ class ProjectBoard extends Page
     #[On('refresh-board')]
     public function refreshBoard(): void
     {
-        // Clear cache before refreshing to get latest data
-        $this->clearProjectBoardCache();
         $this->loadTicketStatuses();
         $this->dispatch('ticket-updated');
-    }
-    
-    /**
-     * Clear project board cache for current project and user
-     */
-    private function clearProjectBoardCache(): void
-    {
-        if (!$this->selectedProject) {
-            return;
-        }
-        
-        // Clear cache with pattern matching for this project
-        $pattern = "project_board_{$this->selectedProject->id}_" . auth()->id() . "_*";
-        
-        // Get all cache keys that match the pattern and delete them
-        $keys = Cache::getRedis()->keys($pattern);
-        if (!empty($keys)) {
-            Cache::getRedis()->del($keys);
-        }
     }
 
     public function showTicketDetails(int $ticketId): void
