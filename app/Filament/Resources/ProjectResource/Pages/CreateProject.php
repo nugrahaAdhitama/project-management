@@ -26,5 +26,10 @@ class CreateProject extends CreateRecord
                 $this->record->ticketStatuses()->create($status);
             }
         }
+
+        // Ensure the user who created the project is added as a member so they can access it
+        if (auth()->check()) {
+            $this->record->members()->syncWithoutDetaching(auth()->id());
+        }
     }
 }
