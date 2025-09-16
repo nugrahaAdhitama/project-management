@@ -7,10 +7,43 @@ use App\Models\Project;
 use Filament\Resources\Pages\CreateRecord;
 use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\Ticket;
 
 class CreateTicket extends CreateRecord
 {
     protected static string $resource = TicketResource::class;
+
+    protected function fillForm(): void
+    {
+        $copyFromId = request()->query('copy_from');
+
+        if ($copyFromId) {
+            $ticket = Ticket::find($copyFromId);
+
+            if ($ticket) {
+                $data = $ticket->toArray();
+
+                // Hapus field yang tidak boleh ikut ke tiket baru
+                unset(
+                    $data['id'],
+                    $data['uuid'],
+                    $data['created_at'],
+                    $data['updated_at'],
+                    $data['created_by']
+                );
+
+                $data['assignees'] = $ticket->assignees()->pluck('users.id')->toArray();
+
+                // isi form dengan data hasil copy
+                $this->form->fill($data);
+
+                return;
+            }
+        }
+
+        // fallback ke default behaviour
+        parent::fillForm();
+    }
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {

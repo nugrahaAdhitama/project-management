@@ -12,6 +12,7 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Filament\Tables\Actions\Action;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use App\Models\Epic;
@@ -331,6 +332,18 @@ class TicketResource extends Resource
             ->actions([
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
+                Action::make('copy')
+                    ->label('Copy')
+                    ->icon('heroicon-o-document-duplicate')
+                    ->color('info')
+                    ->action(function ($record, $livewire) {
+                        // Redirect ke halaman create, dengan parameter copy_from
+                        return $livewire->redirect(
+                            static::getUrl('create', [
+                                'copy_from' => $record->id,
+                            ])
+                        );
+                    }),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
