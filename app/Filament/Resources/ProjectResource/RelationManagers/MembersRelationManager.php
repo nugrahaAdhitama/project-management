@@ -2,6 +2,9 @@
 
 namespace App\Filament\Resources\ProjectResource\RelationManagers;
 
+use App\Events\ProjectMemberAttached;
+use App\Events\ProjectMemberDetached;
+use App\Models\User;
 use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
@@ -44,11 +47,29 @@ class MembersRelationManager extends RelationManager
                 Tables\Actions\AttachAction::make()
                     ->preloadRecordSelect()
                     ->recordSelectSearchColumns(['name', 'email'])
-                    ->label('Add Member'),
+                    ->label('Add Member')
+                    ->after(function (Model $record) {
+                        $project = $this->getOwnerRecord();
+                        $user = User::find($record->id);
+                        $assignedBy = auth()->user();
+                        
+                        if ($user && $assignedBy) {
+                            ProjectMemberAttached::dispatch($project, $user, $assignedBy);
+                        }
+                    }),
             ])
             ->actions([
                 Tables\Actions\DetachAction::make()
-                    ->label('Remove'),
+                    ->label('Remove')
+                    ->after(function (Model $record) {
+                        $project = $this->getOwnerRecord();
+                        $user = User::find($record->id);
+                        $removedBy = auth()->user();
+                        
+                        if ($user && $removedBy) {
+                            ProjectMemberDetached::dispatch($project, $user, $removedBy);
+                        }
+                    }),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
