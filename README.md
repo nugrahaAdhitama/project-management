@@ -139,26 +139,143 @@ The comment system enhances team collaboration:
 - Supports rich text formatting for improved readability
 - Enables better context sharing and decision documentation
 
-## Running with Laravel Octane and FrankenPHP
+## Google Login Integration
 
-This project comes pre-configured with Laravel Octane and FrankenPHP for improved performance. Here's how to use it:
+This application supports Google OAuth login. Here's how to configure it:
 
-### Prerequisites
+### 1. Getting Google OAuth Credentials
 
-The required packages are already included in the project dependencies:
-- `laravel/octane` (in composer.json)
-- `chokidar` (in package.json for file watching)
+1. **Open Google Cloud Console**
+   - Visit [Google Cloud Console](https://console.cloud.google.com/)
+   - Sign in with your Google account
 
-They will be installed automatically when you run `composer install` and `npm install` during the standard installation process.
+2. **Create or Select a Project**
+   - Create a new project or select an existing one
+   - Make sure the project is active
 
-### Running the Application
+3. **Enable Google+ API**
+   - In the sidebar, select "APIs & Services" > "Library"
+   - Search for "Google+ API" and click "Enable"
+
+4. **Create OAuth 2.0 Credentials**
+   - In the sidebar, select "APIs & Services" > "Credentials"
+   - Click "Create Credentials" > "OAuth 2.0 Client IDs"
+   - Select "Web application" as the application type
+   - Enter application name (example: "DewaKoding Project Management")
+   - In "Authorized redirect URIs", add:
+     ```
+     http://localhost:8000/auth/google/callback
+     https://yourdomain.com/auth/google/callback
+     ```
+   - Click "Create"
+
+5. **Copy Client ID and Client Secret**
+   - After creation, you will get Client ID and Client Secret
+   - Copy both values for application configuration
+
+### 2. Environment Configuration
+
+Add Google OAuth configuration in `.env` file:
+
+```env
+GOOGLE_CLIENT_ID=your_google_client_id_here
+GOOGLE_CLIENT_SECRET=your_google_client_secret_here
+```
+
+Replace `your_google_client_id_here` and `your_google_client_secret_here` with the values you obtained from Google Cloud Console.
+
+### 3. How to Use
+
+1. Open the application login page at `/admin/login`
+2. Click the "Continue with Google" button
+3. Sign in with your Google account
+4. The application will automatically create a new account or log in to an existing account
+
+**Note:** If the Google email is already registered in the system, the application will link the Google account with the existing account.
+
+## Queue & Email Notifications
+
+This application uses a queue system to send email notifications asynchronously. Here's how to configure and run it:
+
+### 1. Email Configuration
+
+Configure email in `.env` file:
+
+```env
+# For development (log emails to file)
+MAIL_MAILER=log
+
+# For production (SMTP)
+MAIL_MAILER=smtp
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USERNAME=your-email@gmail.com
+MAIL_PASSWORD=your-app-password
+MAIL_ENCRYPTION=tls
+MAIL_FROM_ADDRESS=your-email@gmail.com
+MAIL_FROM_NAME="DewaKoding Project Management"
+```
+
+### 2. Queue Configuration
+
+Ensure queue configuration in `.env`:
+
+```env
+QUEUE_CONNECTION=database
+```
+
+### 3. Running Queue Worker
+
+To process email notification queues, run the following commands:
 
 #### Development Mode
+```bash
+php artisan queue:work
+```
 
-To run the application in development mode with auto-reloading, simply use the provided composer script:
+#### Production Mode (with automatic restart)
+```bash
+php artisan queue:work --daemon --tries=3 --timeout=60
+```
+
+#### Using Supervisor (Recommended for Production)
+
+1. Install supervisor:
+   ```bash
+   sudo apt-get install supervisor
    ```
-   php artisan octane:start --server=frankenphp --watch
+
+2. Create configuration file `/etc/supervisor/conf.d/laravel-worker.conf`:
+   ```ini
+   [program:laravel-worker]
+   process_name=%(program_name)s_%(process_num)02d
+   command=php /path/to/your/project/artisan queue:work --sleep=3 --tries=3 --max-time=3600
+   autostart=true
+   autorestart=true
+   stopasgroup=true
+   killasgroup=true
+   user=www-data
+   numprocs=8
+   redirect_stderr=true
+   stdout_logfile=/path/to/your/project/storage/logs/worker.log
+   stopwaitsecs=3600
    ```
+
+3. Restart supervisor:
+   ```bash
+   sudo supervisorctl reread
+   sudo supervisorctl update
+   sudo supervisorctl start laravel-worker:*
+   ```
+
+### 4. Email Notification Types
+
+The application sends email notifications for:
+- **Project Assignment**: When a user is added to a project
+- **Comment Notifications**: When there are new comments on tickets
+- **Ticket Updates**: When ticket status changes
+
+**Note:** Make sure the queue worker is always running to process email notifications. Without the queue worker, emails will not be sent.
 
 ## License
 
