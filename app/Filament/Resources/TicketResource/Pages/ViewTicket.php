@@ -29,7 +29,9 @@ class ViewTicket extends ViewRecord
     {
         $ticket = $this->getRecord();
         $project = $ticket->project;
-        $canComment = auth()->user()->can('createForTicket', [TicketComment::class, $ticket]);
+        
+        // Check if user is member of the project
+        $canComment = $project->members()->where('users.id', auth()->id())->exists();
 
         return [
             Actions\EditAction::make()
@@ -54,7 +56,7 @@ class ViewTicket extends ViewRecord
 
                     $comment = $ticket->comments()->create([
                         'user_id' => auth()->id(),
-                        'comment' => $data['comment'],
+                        'comment' => $data['comment']
                     ]);
 
                     // Mark related notifications as read for current user
@@ -90,8 +92,8 @@ class ViewTicket extends ViewRecord
             return;
         }
 
-        // Check permissions
-        if (! auth()->user()->can('update', $comment)) {
+        // Check if user can edit (only comment owner or super admin)
+        if ($comment->user_id !== auth()->id() && !auth()->user()->hasRole(['super_admin'])) {
             Notification::make()
                 ->title('You do not have permission to edit this comment')
                 ->danger()
@@ -100,7 +102,7 @@ class ViewTicket extends ViewRecord
             return;
         }
 
-        $this->editingCommentId = $id; // Set ID komentar yang sedang diedit
+        $this->editingCommentId = $id;
         $this->mountAction('editComment', ['commentId' => $id]);
     }
 
@@ -117,8 +119,8 @@ class ViewTicket extends ViewRecord
             return;
         }
 
-        // Check permissions
-        if (! auth()->user()->can('delete', $comment)) {
+        // Check if user can delete (only comment owner or super admin)
+        if ($comment->user_id !== auth()->id() && !auth()->user()->hasRole(['super_admin'])) {
             Notification::make()
                 ->title('You do not have permission to delete this comment')
                 ->danger()
@@ -225,7 +227,7 @@ class ViewTicket extends ViewRecord
                             ->label('Recent Comments')
                             ->state(function (Ticket $record) {
                                 if (method_exists($record, 'comments')) {
-                                    return $record->comments()->with('user')->latest()->get();
+                                    return $record->comments()->with('user')->oldest()->get();
                                 }
 
                                 return collect();
