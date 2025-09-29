@@ -279,4 +279,16 @@ The application sends email notifications for:
 
 ## License
 
-This project is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+**Dewakoding Project Management System License**
+
+**Usage Terms:**
+- ✅ Allowed for personal and non-commercial use
+- ✅ Allowed to modify for personal use
+- ✅ Allowed to share with others
+- ❌ Prohibited to sell this source code
+- ❌ Prohibited for commercial use without permission
+- ⚠️ If selling or distributing, must credit "dewakoding" as the original creator
+
+**Copyright © dewakoding**
+
+For commercial licensing inquiries, contact: dewakoding
