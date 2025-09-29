@@ -279,15 +279,16 @@ The application sends email notifications for:
 
 ## License
 
-**Dewakoding Project Management System License**
+This project is licensed under the GNU General Public License v3.0 or later (GPL-3.0-or-later).
 
-**Usage Terms:**
-- ✅ Allowed for personal use
-- ✅ Allowed for internal company use
-- ✅ Allowed to modify as needed
-- ✅ Allowed to share with others
-- ❌ Prohibited to sell this source code to anyone
+**Key Points:**
+- ✅ Free to use, modify, and distribute
+- ✅ Source code must remain open
+- ✅ Derivative works must also be GPL-licensed
+- ✅ Commercial use allowed
+- ⚠️ Any modifications or derivative works must be shared under the same GPL license
+- ⚠️ Must include copyright notice and license text
+
+For the full license text, see the [LICENSE](LICENSE) file.
 
 **Copyright © dewakoding**
-
-For licensing inquiries, contact: dewakoding
