@@ -282,13 +282,12 @@ The application sends email notifications for:
 **Dewakoding Project Management System License**
 
 **Usage Terms:**
-- ✅ Allowed for personal and non-commercial use
-- ✅ Allowed to modify for personal use
+- ✅ Allowed for personal use
+- ✅ Allowed for internal company use
+- ✅ Allowed to modify as needed
 - ✅ Allowed to share with others
-- ❌ Prohibited to sell this source code
-- ❌ Prohibited for commercial use without permission
-- ⚠️ If selling or distributing, must credit "dewakoding" as the original creator
+- ❌ Prohibited to sell this source code to anyone
 
 **Copyright © dewakoding**
 
-For commercial licensing inquiries, contact: dewakoding
+For licensing inquiries, contact: dewakoding
