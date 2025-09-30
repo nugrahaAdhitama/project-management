@@ -23,6 +23,11 @@ class TicketCommentPolicy
      */
     public function view(User $user, TicketComment $ticketComment): bool
     {
+        // Load ticket relation only if not already loaded to avoid N+1 queries
+        if (!$ticketComment->relationLoaded('ticket')) {
+            $ticketComment->load('ticket');
+        }
+
         // If user can view the ticket, they can view the comments
         return $user->can('view', $ticketComment->ticket);
     }
