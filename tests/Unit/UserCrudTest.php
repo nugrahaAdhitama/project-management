@@ -10,7 +10,7 @@ use Mockery;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
-uses(RefreshDatabase::class);
+uses(RefreshDatabase::class); 
 
 beforeEach(function () {
     // Setup permissions and roles for testing
