@@ -9,379 +9,412 @@ use Illuminate\Support\Facades\Hash;
 use Mockery;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
+use Tests\TestCase;
 
-uses(RefreshDatabase::class); 
+class UserCrudTest extends TestCase
+{
+    use RefreshDatabase;
 
-beforeEach(function () {
-    // Setup permissions and roles for testing
-    Permission::create(['name' => 'create_user']);
-    Permission::create(['name' => 'view_user']);
-    Permission::create(['name' => 'view_any_user']);
-    Permission::create(['name' => 'update_user']);
-    Permission::create(['name' => 'delete_user']);
+    protected $superAdminRole;
+    protected $memberRole;
 
-    $this->superAdminRole = Role::create(['name' => 'super_admin']);
-    $this->superAdminRole->givePermissionTo(['create_user', 'view_user', 'view_any_user', 'update_user', 'delete_user']);
+    protected function setUp(): void
+    {
+        parent::setUp();
 
-    $this->memberRole = Role::create(['name' => 'member']);
-});
+        // Setup permissions and roles for testing
+        Permission::create(['name' => 'create_user']);
+        Permission::create(['name' => 'view_user']);
+        Permission::create(['name' => 'view_any_user']);
+        Permission::create(['name' => 'update_user']);
+        Permission::create(['name' => 'delete_user']);
 
-// ============================================
-// CREATE TESTS
-// ============================================
+        $this->superAdminRole = Role::create(['name' => 'super_admin']);
+        $this->superAdminRole->givePermissionTo(['create_user', 'view_user', 'view_any_user', 'update_user', 'delete_user']);
 
-it('can create a user with valid data using mock', function () {
-    // Arrange
-    $userData = [
-        'name' => 'Test User',
-        'email' => 'test@example.com',
-        'password' => 'password123',
-    ];
+        $this->memberRole = Role::create(['name' => 'member']);
+    }
 
-    // Create a partial mock of User model
-    $userMock = Mockery::mock(User::class)->makePartial();
-    $userMock->shouldReceive('save')->once()->andReturn(true);
-    $userMock->shouldReceive('getAttribute')->with('id')->andReturn(1);
-    $userMock->shouldReceive('getAttribute')->with('name')->andReturn($userData['name']);
-    $userMock->shouldReceive('getAttribute')->with('email')->andReturn($userData['email']);
+    protected function tearDown(): void
+    {
+        Mockery::close();
+        parent::tearDown();
+    }
 
-    // Set attributes
-    $userMock->name = $userData['name'];
-    $userMock->email = $userData['email'];
-    $userMock->password = Hash::make($userData['password']);
+    // ============================================
+    // CREATE TESTS
+    // ============================================
 
-    // Act
-    $result = $userMock->save();
+    public function testCanCreateUserWithValidDataUsingMock(): void
+    {
+        // Arrange
+        $userData = [
+            'name' => 'Test User',
+            'email' => 'test@example.com',
+            'password' => 'password123',
+        ];
 
-    // Assert
-    expect($result)->toBeTrue()
-        ->and($userMock->name)->toBe('Test User')
-        ->and($userMock->email)->toBe('test@example.com');
-});
+        // Create a partial mock of User model
+        $userMock = Mockery::mock(User::class)->makePartial();
+        $userMock->shouldReceive('save')->once()->andReturn(true);
+        $userMock->shouldReceive('getAttribute')->with('id')->andReturn(1);
+        $userMock->shouldReceive('getAttribute')->with('name')->andReturn($userData['name']);
+        $userMock->shouldReceive('getAttribute')->with('email')->andReturn($userData['email']);
 
-it('validates required fields during user creation', function () {
-    // Act & Assert: Missing name
-    expect(function () {
+        // Set attributes
+        $userMock->name = $userData['name'];
+        $userMock->email = $userData['email'];
+        $userMock->password = Hash::make($userData['password']);
+
+        // Act
+        $result = $userMock->save();
+
+        // Assert
+        $this->assertTrue($result);
+        $this->assertEquals('Test User', $userMock->name);
+        $this->assertEquals('test@example.com', $userMock->email);
+    }
+
+    public function testValidatesRequiredFieldsDuringUserCreation(): void
+    {
+        // Act & Assert: Missing name
+        $this->expectException(\Illuminate\Database\QueryException::class);
+
         User::create([
             'email' => 'test@example.com',
             'password' => Hash::make('password'),
         ]);
-    })->toThrow(\Illuminate\Database\QueryException::class);
-});
+    }
 
-it('validates unique email during user creation', function () {
-    // Arrange: Create existing user
-    User::factory()->create(['email' => 'existing@example.com']);
+    public function testValidatesUniqueEmailDuringUserCreation(): void
+    {
+        // Arrange: Create existing user
+        User::factory()->create(['email' => 'existing@example.com']);
 
-    // Act & Assert: Duplicate email
-    expect(function () {
+        // Act & Assert: Duplicate email
+        $this->expectException(\Illuminate\Database\QueryException::class);
+
         User::create([
             'name' => 'Another User',
             'email' => 'existing@example.com',
             'password' => Hash::make('password'),
         ]);
-    })->toThrow(\Illuminate\Database\QueryException::class);
-});
+    }
 
-it('hashes password automatically when creating user', function () {
-    // Arrange
-    $plainPassword = 'SecurePassword123';
+    public function testHashesPasswordAutomaticallyWhenCreatingUser(): void
+    {
+        // Arrange
+        $plainPassword = 'SecurePassword123';
 
-    // Act
-    $user = User::create([
-        'name' => 'Password User',
-        'email' => 'password@example.com',
-        'password' => Hash::make($plainPassword),
-    ]);
+        // Act
+        $user = User::create([
+            'name' => 'Password User',
+            'email' => 'password@example.com',
+            'password' => Hash::make($plainPassword),
+        ]);
 
-    // Assert
-    expect($user->password)->not->toBe($plainPassword)
-        ->and(Hash::check($plainPassword, $user->password))->toBeTrue();
-});
+        // Assert
+        $this->assertNotEquals($plainPassword, $user->password);
+        $this->assertTrue(Hash::check($plainPassword, $user->password));
+    }
 
-it('authorizes user creation via policy with mock', function () {
-    // Arrange: Create users with/without permission
-    $authorizedUser = User::factory()->create();
-    $authorizedUser->givePermissionTo('create_user');
+    public function testAuthorizesUserCreationViaPolicyWithMock(): void
+    {
+        // Arrange: Create users with/without permission
+        $authorizedUser = User::factory()->create();
+        $authorizedUser->givePermissionTo('create_user');
 
-    $unauthorizedUser = User::factory()->create();
+        $unauthorizedUser = User::factory()->create();
 
-    // Create policy mock
-    $policyMock = Mockery::mock(UserPolicy::class)->makePartial();
-    $policyMock->shouldReceive('create')->with($authorizedUser)->andReturn(true);
-    $policyMock->shouldReceive('create')->with($unauthorizedUser)->andReturn(false);
+        // Create policy mock
+        $policyMock = Mockery::mock(UserPolicy::class)->makePartial();
+        $policyMock->shouldReceive('create')->with($authorizedUser)->andReturn(true);
+        $policyMock->shouldReceive('create')->with($unauthorizedUser)->andReturn(false);
 
-    // Act & Assert
-    expect($policyMock->create($authorizedUser))->toBeTrue()
-        ->and($policyMock->create($unauthorizedUser))->toBeFalse();
-});
+        // Act & Assert
+        $this->assertTrue($policyMock->create($authorizedUser));
+        $this->assertFalse($policyMock->create($unauthorizedUser));
+    }
 
-// ============================================
-// READ TESTS
-// ============================================
+    // ============================================
+    // READ TESTS
+    // ============================================
 
-it('can retrieve a single user by id', function () {
-    // Arrange: Create a user in database
-    $user = User::factory()->create([
-        'name' => 'John Doe',
-        'email' => 'john@example.com',
-    ]);
+    public function testCanRetrieveASingleUserById(): void
+    {
+        // Arrange: Create a user in database
+        $user = User::factory()->create([
+            'name' => 'John Doe',
+            'email' => 'john@example.com',
+        ]);
 
-    // Act: Retrieve user by ID
-    $foundUser = User::find($user->id);
+        // Act: Retrieve user by ID
+        $foundUser = User::find($user->id);
 
-    // Assert
-    expect($foundUser)->not->toBeNull()
-        ->and($foundUser->id)->toBe($user->id)
-        ->and($foundUser->name)->toBe('John Doe')
-        ->and($foundUser->email)->toBe('john@example.com');
-});
+        // Assert
+        $this->assertNotNull($foundUser);
+        $this->assertEquals($user->id, $foundUser->id);
+        $this->assertEquals('John Doe', $foundUser->name);
+        $this->assertEquals('john@example.com', $foundUser->email);
+    }
 
-it('can retrieve all users', function () {
-    // Arrange: Create multiple users in database
-    User::factory()->create(['name' => 'User 1', 'email' => 'user1@example.com']);
-    User::factory()->create(['name' => 'User 2', 'email' => 'user2@example.com']);
+    public function testCanRetrieveAllUsers(): void
+    {
+        // Arrange: Create multiple users in database
+        User::factory()->create(['name' => 'User 1', 'email' => 'user1@example.com']);
+        User::factory()->create(['name' => 'User 2', 'email' => 'user2@example.com']);
 
-    // Act: Retrieve all users
-    $users = User::all();
+        // Act: Retrieve all users
+        $users = User::all();
 
-    // Assert: Should have at least 2 users
-    expect($users->count())->toBeGreaterThanOrEqual(2)
-        ->and($users->where('name', 'User 1')->first())->not->toBeNull()
-        ->and($users->where('name', 'User 2')->first())->not->toBeNull();
-});
+        // Assert: Should have at least 2 users
+        $this->assertGreaterThanOrEqual(2, $users->count());
+        $this->assertNotNull($users->where('name', 'User 1')->first());
+        $this->assertNotNull($users->where('name', 'User 2')->first());
+    }
 
-it('can find user by email', function () {
-    // Arrange: Create a user with specific email
-    $email = 'findme@example.com';
-    User::factory()->create([
-        'name' => 'Find Me',
-        'email' => $email,
-    ]);
+    public function testCanFindUserByEmail(): void
+    {
+        // Arrange: Create a user with specific email
+        $email = 'findme@example.com';
+        User::factory()->create([
+            'name' => 'Find Me',
+            'email' => $email,
+        ]);
 
-    // Act: Find user by email
-    $user = User::where('email', $email)->first();
+        // Act: Find user by email
+        $user = User::where('email', $email)->first();
 
-    // Assert
-    expect($user)->not->toBeNull()
-        ->and($user->email)->toBe($email)
-        ->and($user->name)->toBe('Find Me');
-});
+        // Assert
+        $this->assertNotNull($user);
+        $this->assertEquals($email, $user->email);
+        $this->assertEquals('Find Me', $user->name);
+    }
 
-it('returns null when user not found', function () {
-    // Arrange: Use a very high ID that doesn't exist
-    $nonExistentId = 999999;
+    public function testReturnsNullWhenUserNotFound(): void
+    {
+        // Arrange: Use a very high ID that doesn't exist
+        $nonExistentId = 999999;
 
-    // Act: Try to find non-existent user
-    $user = User::find($nonExistentId);
+        // Act: Try to find non-existent user
+        $user = User::find($nonExistentId);
 
-    // Assert
-    expect($user)->toBeNull();
-});
+        // Assert
+        $this->assertNull($user);
+    }
 
-it('authorizes user viewing via policy with mock', function () {
-    // Arrange
-    $viewer = User::factory()->create();
-    $viewer->givePermissionTo('view_user');
+    public function testAuthorizesUserViewingViaPolicyWithMock(): void
+    {
+        // Arrange
+        $viewer = User::factory()->create();
+        $viewer->givePermissionTo('view_user');
 
-    $nonViewer = User::factory()->create();
+        $nonViewer = User::factory()->create();
 
-    // Create policy mock
-    $policyMock = Mockery::mock(UserPolicy::class)->makePartial();
-    $policyMock->shouldReceive('view')->with($viewer)->andReturn(true);
-    $policyMock->shouldReceive('view')->with($nonViewer)->andReturn(false);
+        // Create policy mock
+        $policyMock = Mockery::mock(UserPolicy::class)->makePartial();
+        $policyMock->shouldReceive('view')->with($viewer)->andReturn(true);
+        $policyMock->shouldReceive('view')->with($nonViewer)->andReturn(false);
 
-    // Act & Assert
-    expect($policyMock->view($viewer))->toBeTrue()
-        ->and($policyMock->view($nonViewer))->toBeFalse();
-});
+        // Act & Assert
+        $this->assertTrue($policyMock->view($viewer));
+        $this->assertFalse($policyMock->view($nonViewer));
+    }
 
-// ============================================
-// UPDATE TESTS
-// ============================================
+    // ============================================
+    // UPDATE TESTS
+    // ============================================
 
-it('can update user data using mock', function () {
-    // Arrange
-    $userMock = Mockery::mock(User::class)->makePartial();
-    $userMock->id = 1;
-    $userMock->name = 'Old Name';
-    $userMock->email = 'old@example.com';
+    public function testCanUpdateUserDataUsingMock(): void
+    {
+        // Arrange
+        $userMock = Mockery::mock(User::class)->makePartial();
+        $userMock->id = 1;
+        $userMock->name = 'Old Name';
+        $userMock->email = 'old@example.com';
 
-    $userMock->shouldReceive('update')
-        ->with(['name' => 'New Name'])
-        ->andReturn(true);
+        $userMock->shouldReceive('update')
+            ->with(['name' => 'New Name'])
+            ->andReturn(true);
 
-    // Act
-    $result = $userMock->update(['name' => 'New Name']);
+        // Act
+        $result = $userMock->update(['name' => 'New Name']);
 
-    // Assert
-    expect($result)->toBeTrue();
-});
+        // Assert
+        $this->assertTrue($result);
+    }
 
-it('can update user email using mock', function () {
-    // Arrange
-    $userMock = Mockery::mock(User::class)->makePartial();
-    $userMock->email = 'old@example.com';
+    public function testCanUpdateUserEmailUsingMock(): void
+    {
+        // Arrange
+        $userMock = Mockery::mock(User::class)->makePartial();
+        $userMock->email = 'old@example.com';
 
-    $userMock->shouldReceive('save')->once()->andReturn(true);
+        $userMock->shouldReceive('save')->once()->andReturn(true);
 
-    // Act
-    $userMock->email = 'new@example.com';
-    $result = $userMock->save();
+        // Act
+        $userMock->email = 'new@example.com';
+        $result = $userMock->save();
 
-    // Assert
-    expect($result)->toBeTrue()
-        ->and($userMock->email)->toBe('new@example.com');
-});
+        // Assert
+        $this->assertTrue($result);
+        $this->assertEquals('new@example.com', $userMock->email);
+    }
 
-it('can update user password using mock', function () {
-    // Arrange
-    $newPassword = 'NewSecurePassword123';
-    $hashedPassword = Hash::make($newPassword);
+    public function testCanUpdateUserPasswordUsingMock(): void
+    {
+        // Arrange
+        $newPassword = 'NewSecurePassword123';
+        $hashedPassword = Hash::make($newPassword);
 
-    $userMock = Mockery::mock(User::class)->makePartial();
-    $userMock->shouldReceive('update')
-        ->with(['password' => $hashedPassword])
-        ->andReturn(true);
+        $userMock = Mockery::mock(User::class)->makePartial();
+        $userMock->shouldReceive('update')
+            ->with(['password' => $hashedPassword])
+            ->andReturn(true);
 
-    // Act
-    $result = $userMock->update(['password' => $hashedPassword]);
+        // Act
+        $result = $userMock->update(['password' => $hashedPassword]);
 
-    // Assert
-    expect($result)->toBeTrue();
-});
+        // Assert
+        $this->assertTrue($result);
+    }
 
-it('validates unique email during user update', function () {
-    // Arrange: Create two users
-    User::factory()->create(['email' => 'first@example.com']);
-    $secondUser = User::factory()->create(['email' => 'second@example.com']);
+    public function testValidatesUniqueEmailDuringUserUpdate(): void
+    {
+        // Arrange: Create two users
+        User::factory()->create(['email' => 'first@example.com']);
+        $secondUser = User::factory()->create(['email' => 'second@example.com']);
 
-    // Act & Assert: Try to update second user with first user's email
-    expect(function () use ($secondUser) {
+        // Act & Assert: Try to update second user with first user's email
+        $this->expectException(\Illuminate\Database\QueryException::class);
+
         $secondUser->email = 'first@example.com';
         $secondUser->saveOrFail();
-    })->toThrow(\Illuminate\Database\QueryException::class);
-});
+    }
 
-it('authorizes user update via policy with mock', function () {
-    // Arrange
-    $authorizedUser = User::factory()->create();
-    $authorizedUser->givePermissionTo('update_user');
+    public function testAuthorizesUserUpdateViaPolicyWithMock(): void
+    {
+        // Arrange
+        $authorizedUser = User::factory()->create();
+        $authorizedUser->givePermissionTo('update_user');
 
-    $unauthorizedUser = User::factory()->create();
+        $unauthorizedUser = User::factory()->create();
 
-    // Create policy mock
-    $policyMock = Mockery::mock(UserPolicy::class)->makePartial();
-    $policyMock->shouldReceive('update')->with($authorizedUser)->andReturn(true);
-    $policyMock->shouldReceive('update')->with($unauthorizedUser)->andReturn(false);
+        // Create policy mock
+        $policyMock = Mockery::mock(UserPolicy::class)->makePartial();
+        $policyMock->shouldReceive('update')->with($authorizedUser)->andReturn(true);
+        $policyMock->shouldReceive('update')->with($unauthorizedUser)->andReturn(false);
 
-    // Act & Assert
-    expect($policyMock->update($authorizedUser))->toBeTrue()
-        ->and($policyMock->update($unauthorizedUser))->toBeFalse();
-});
+        // Act & Assert
+        $this->assertTrue($policyMock->update($authorizedUser));
+        $this->assertFalse($policyMock->update($unauthorizedUser));
+    }
 
-it('can update multiple user attributes at once using mock', function () {
-    // Arrange
-    $updateData = [
-        'name' => 'Updated Name',
-        'email' => 'updated@example.com',
-    ];
+    public function testCanUpdateMultipleUserAttributesAtOnceUsingMock(): void
+    {
+        // Arrange
+        $updateData = [
+            'name' => 'Updated Name',
+            'email' => 'updated@example.com',
+        ];
 
-    $userMock = Mockery::mock(User::class)->makePartial();
-    $userMock->shouldReceive('update')
-        ->with($updateData)
-        ->andReturn(true);
+        $userMock = Mockery::mock(User::class)->makePartial();
+        $userMock->shouldReceive('update')
+            ->with($updateData)
+            ->andReturn(true);
 
-    // Act
-    $result = $userMock->update($updateData);
+        // Act
+        $result = $userMock->update($updateData);
 
-    // Assert
-    expect($result)->toBeTrue();
-});
+        // Assert
+        $this->assertTrue($result);
+    }
 
-// ============================================
-// DELETE TESTS
-// ============================================
+    // ============================================
+    // DELETE TESTS
+    // ============================================
 
-it('can delete a user using mock', function () {
-    // Arrange
-    $userMock = Mockery::mock(User::class)->makePartial();
-    $userMock->id = 1;
-    $userMock->shouldReceive('delete')->once()->andReturn(true);
+    public function testCanDeleteAUserUsingMock(): void
+    {
+        // Arrange
+        $userMock = Mockery::mock(User::class)->makePartial();
+        $userMock->id = 1;
+        $userMock->shouldReceive('delete')->once()->andReturn(true);
 
-    // Act
-    $result = $userMock->delete();
+        // Act
+        $result = $userMock->delete();
 
-    // Assert
-    expect($result)->toBeTrue();
-});
+        // Assert
+        $this->assertTrue($result);
+    }
 
-it('verifies user is deleted from database', function () {
-    // Arrange: Create a user
-    $user = User::factory()->create(['email' => 'todelete@example.com']);
-    $userId = $user->id;
+    public function testVerifiesUserIsDeletedFromDatabase(): void
+    {
+        // Arrange: Create a user
+        $user = User::factory()->create(['email' => 'todelete@example.com']);
+        $userId = $user->id;
 
-    // Act: Delete user
-    $user->delete();
+        // Act: Delete user
+        $user->delete();
 
-    // Assert: User no longer exists
-    $this->assertDatabaseMissing('users', [
-        'id' => $userId,
-        'email' => 'todelete@example.com',
-    ]);
+        // Assert: User no longer exists
+        $this->assertDatabaseMissing('users', [
+            'id' => $userId,
+            'email' => 'todelete@example.com',
+        ]);
 
-    expect(User::find($userId))->toBeNull();
-});
+        $this->assertNull(User::find($userId));
+    }
 
-it('authorizes user deletion via policy with mock', function () {
-    // Arrange
-    $authorizedUser = User::factory()->create();
-    $authorizedUser->givePermissionTo('delete_user');
+    public function testAuthorizesUserDeletionViaPolicyWithMock(): void
+    {
+        // Arrange
+        $authorizedUser = User::factory()->create();
+        $authorizedUser->givePermissionTo('delete_user');
 
-    $unauthorizedUser = User::factory()->create();
+        $unauthorizedUser = User::factory()->create();
 
-    // Create policy mock
-    $policyMock = Mockery::mock(UserPolicy::class)->makePartial();
-    $policyMock->shouldReceive('delete')->with($authorizedUser)->andReturn(true);
-    $policyMock->shouldReceive('delete')->with($unauthorizedUser)->andReturn(false);
+        // Create policy mock
+        $policyMock = Mockery::mock(UserPolicy::class)->makePartial();
+        $policyMock->shouldReceive('delete')->with($authorizedUser)->andReturn(true);
+        $policyMock->shouldReceive('delete')->with($unauthorizedUser)->andReturn(false);
 
-    // Act & Assert
-    expect($policyMock->delete($authorizedUser))->toBeTrue()
-        ->and($policyMock->delete($unauthorizedUser))->toBeFalse();
-});
+        // Act & Assert
+        $this->assertTrue($policyMock->delete($authorizedUser));
+        $this->assertFalse($policyMock->delete($unauthorizedUser));
+    }
 
-it('can force delete a user using mock', function () {
-    // Arrange
-    $userMock = Mockery::mock(User::class)->makePartial();
-    $userMock->shouldReceive('forceDelete')->once()->andReturn(true);
+    public function testCanForceDeleteAUserUsingMock(): void
+    {
+        // Arrange
+        $userMock = Mockery::mock(User::class)->makePartial();
+        $userMock->shouldReceive('forceDelete')->once()->andReturn(true);
 
-    // Act
-    $result = $userMock->forceDelete();
+        // Act
+        $result = $userMock->forceDelete();
 
-    // Assert
-    expect($result)->toBeTrue();
-});
+        // Assert
+        $this->assertTrue($result);
+    }
 
-it('can delete multiple users using bulk delete', function () {
-    // Arrange: Create multiple users
-    $user1 = User::factory()->create(['email' => 'bulk1@example.com']);
-    $user2 = User::factory()->create(['email' => 'bulk2@example.com']);
-    $user3 = User::factory()->create(['email' => 'bulk3@example.com']);
+    public function testCanDeleteMultipleUsersUsingBulkDelete(): void
+    {
+        // Arrange: Create multiple users
+        $user1 = User::factory()->create(['email' => 'bulk1@example.com']);
+        $user2 = User::factory()->create(['email' => 'bulk2@example.com']);
+        $user3 = User::factory()->create(['email' => 'bulk3@example.com']);
 
-    $ids = [$user1->id, $user2->id, $user3->id];
+        $ids = [$user1->id, $user2->id, $user3->id];
 
-    // Act: Delete multiple users
-    $deletedCount = User::whereIn('id', $ids)->delete();
+        // Act: Delete multiple users
+        $deletedCount = User::whereIn('id', $ids)->delete();
 
-    // Assert
-    expect($deletedCount)->toBe(3);
+        // Assert
+        $this->assertEquals(3, $deletedCount);
 
-    // Verify users are deleted
-    expect(User::find($user1->id))->toBeNull()
-        ->and(User::find($user2->id))->toBeNull()
-        ->and(User::find($user3->id))->toBeNull();
-});
-
-afterEach(function () {
-    Mockery::close();
-});
+        // Verify users are deleted
+        $this->assertNull(User::find($user1->id));
+        $this->assertNull(User::find($user2->id));
+        $this->assertNull(User::find($user3->id));
+    }
+}
