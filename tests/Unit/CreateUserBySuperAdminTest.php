@@ -12,56 +12,32 @@ use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
-// Helper function to setup permissions
-function setupPermissions(): void
-{
-    Permission::create(['name' => 'create_user']);
-    Permission::create(['name' => 'view_user']);
-    Permission::create(['name' => 'view_any_user']);
-}
-
-// Helper function to setup roles
-function setupRoles(): array
-{
-    $superAdminRole = Role::create(['name' => 'super_admin']);
-    $superAdminRole->givePermissionTo('create_user');
-    $memberRole = Role::create(['name' => 'member']);
-    
-    return ['superAdminRole' => $superAdminRole, 'memberRole' => $memberRole];
-}
-
-// Helper function to create a super admin user
-function createSuperAdmin(array $attributes = []): User
-{
-    $superAdmin = User::factory()->create($attributes);
-    $superAdmin->assignRole('super_admin');
-    return $superAdmin;
-}
-
-// Helper function to create user data
-function getUserData(string $name = 'New User', string $email = 'newuser@example.com', string $password = 'password123'): array
-{
-    return [
-        'name' => $name,
-        'email' => $email,
-        'password' => Hash::make($password),
-    ];
-}
-
 beforeEach(function () {
-    setupPermissions();
-    $roles = setupRoles();
-    $this->superAdminRole = $roles['superAdminRole'];
-    $this->memberRole = $roles['memberRole'];
+    // Setup permissions
+    $permissionModel = new Permission();
+    $permissionModel->create(['name' => 'create_user']);
+    $permissionModel->create(['name' => 'view_user']);
+    $permissionModel->create(['name' => 'view_any_user']);
+    
+    // Setup roles
+    $roleModel = new Role();
+    $this->superAdminRole = $roleModel->create(['name' => 'super_admin']);
+    $this->superAdminRole->givePermissionTo('create_user');
+    $this->memberRole = $roleModel->create(['name' => 'member']);
 });
 
 it('allows super admin to create a new user', function () {
-    $superAdmin = createSuperAdmin(['name' => 'Super Admin', 'email' => 'superadmin@example.com']);
+    $superAdmin = User::factory()->create(['name' => 'Super Admin', 'email' => 'superadmin@example.com']);
+    $superAdmin->assignRole('super_admin');
     $this->actingAs($superAdmin);
 
     expect($superAdmin->can('create_user'))->toBeTrue();
 
-    $newUser = User::create(getUserData());
+    $newUser = User::create([
+        'name' => 'New User',
+        'email' => 'newuser@example.com',
+        'password' => Hash::make('password123'),
+    ]);
 
     expect($newUser)->toBeInstanceOf(User::class)
         ->and($newUser->name)->toBe('New User')
@@ -87,11 +63,16 @@ it('denies non-super admin users from creating a new user', function () {
 });
 
 it('hashes password when creating a user', function () {
-    $superAdmin = createSuperAdmin();
+    $superAdmin = User::factory()->create();
+    $superAdmin->assignRole('super_admin');
     $this->actingAs($superAdmin);
 
     $plainPassword = 'SecurePassword123!';
-    $newUser = User::create(getUserData('Test User', 'test@example.com', $plainPassword));
+    $newUser = User::create([
+        'name' => 'Test User',
+        'email' => 'test@example.com',
+        'password' => Hash::make($plainPassword),
+    ]);
 
     expect($newUser->password)->not->toBe($plainPassword)
         ->and(Hash::check($plainPassword, $newUser->password))->toBeTrue();
@@ -103,10 +84,15 @@ it('hashes password when creating a user', function () {
 });
 
 it('assigns roles to newly created user', function () {
-    $superAdmin = createSuperAdmin();
+    $superAdmin = User::factory()->create();
+    $superAdmin->assignRole('super_admin');
     $this->actingAs($superAdmin);
 
-    $newUser = User::create(getUserData('User With Role', 'userrole@example.com', 'password'));
+    $newUser = User::create([
+        'name' => 'User With Role',
+        'email' => 'userrole@example.com',
+        'password' => Hash::make('password'),
+    ]);
     $newUser->assignRole('member');
 
     expect($newUser->hasRole('member'))->toBeTrue()
@@ -115,7 +101,8 @@ it('assigns roles to newly created user', function () {
 });
 
 it('validates required fields when creating user', function () {
-    $superAdmin = createSuperAdmin();
+    $superAdmin = User::factory()->create();
+    $superAdmin->assignRole('super_admin');
     $this->actingAs($superAdmin);
 
     expect(fn() => User::create(['email' => 'test@example.com', 'password' => Hash::make('password')]))
@@ -123,13 +110,21 @@ it('validates required fields when creating user', function () {
 });
 
 it('validates unique email when creating user', function () {
-    $superAdmin = createSuperAdmin(['email' => 'superadmin@example.com']);
+    $superAdmin = User::factory()->create(['email' => 'superadmin@example.com']);
+    $superAdmin->assignRole('super_admin');
     $this->actingAs($superAdmin);
 
-    User::create(getUserData('Existing User', 'existing@example.com', 'password'));
+    User::create([
+        'name' => 'Existing User',
+        'email' => 'existing@example.com',
+        'password' => Hash::make('password'),
+    ]);
 
-    expect(fn() => User::create(getUserData('Duplicate User', 'existing@example.com', 'password')))
-        ->toThrow(\Illuminate\Database\QueryException::class);
+    expect(fn() => User::create([
+        'name' => 'Duplicate User',
+        'email' => 'existing@example.com',
+        'password' => Hash::make('password'),
+    ]))->toThrow(\Illuminate\Database\QueryException::class);
 });
 
 it('verifies UserPolicy create method uses correct permission', function () {
@@ -151,11 +146,16 @@ it('verifies UserPolicy create method uses correct permission', function () {
 });
 
 it('can assign multiple roles to a user during creation', function () {
-    $superAdmin = createSuperAdmin();
+    $superAdmin = User::factory()->create();
+    $superAdmin->assignRole('super_admin');
     $this->actingAs($superAdmin);
 
     $adminRole = Role::create(['name' => 'admin']);
-    $newUser = User::create(getUserData('Multi Role User', 'multirole@example.com', 'password'));
+    $newUser = User::create([
+        'name' => 'Multi Role User',
+        'email' => 'multirole@example.com',
+        'password' => Hash::make('password'),
+    ]);
     $newUser->assignRole(['member', 'admin']);
 
     expect($newUser->hasRole('member'))->toBeTrue()
@@ -164,10 +164,15 @@ it('can assign multiple roles to a user during creation', function () {
 });
 
 it('sets email_verified_at when provided during user creation', function () {
-    $superAdmin = createSuperAdmin();
+    $superAdmin = User::factory()->create();
+    $superAdmin->assignRole('super_admin');
     $this->actingAs($superAdmin);
 
-    $newUser = User::create(getUserData('Verified User', 'verified@example.com', 'password'));
+    $newUser = User::create([
+        'name' => 'Verified User',
+        'email' => 'verified@example.com',
+        'password' => Hash::make('password'),
+    ]);
     $verifiedAt = now();
     $newUser->email_verified_at = $verifiedAt;
     $newUser->save();
@@ -178,17 +183,23 @@ it('sets email_verified_at when provided during user creation', function () {
 });
 
 it('creates user without email verification when not provided', function () {
-    $superAdmin = createSuperAdmin();
+    $superAdmin = User::factory()->create();
+    $superAdmin->assignRole('super_admin');
     $this->actingAs($superAdmin);
 
-    $newUser = User::create(getUserData('Unverified User', 'unverified@example.com', 'password'));
+    $newUser = User::create([
+        'name' => 'Unverified User',
+        'email' => 'unverified@example.com',
+        'password' => Hash::make('password'),
+    ]);
 
     expect($newUser->email_verified_at)->toBeNull()
         ->and($newUser->hasVerifiedEmail())->toBeFalse();
 });
 
 it('allows super admin to create user with google_id for OAuth', function () {
-    $superAdmin = createSuperAdmin();
+    $superAdmin = User::factory()->create();
+    $superAdmin->assignRole('super_admin');
     $this->actingAs($superAdmin);
 
     $newUser = User::create([
@@ -203,7 +214,8 @@ it('allows super admin to create user with google_id for OAuth', function () {
 });
 
 it('mocks user creation and verifies method calls', function () {
-    $superAdmin = createSuperAdmin();
+    $superAdmin = User::factory()->create();
+    $superAdmin->assignRole('super_admin');
     $this->actingAs($superAdmin);
 
     $userMock = Mockery::mock(User::class)->makePartial();

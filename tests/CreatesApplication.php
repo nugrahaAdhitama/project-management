@@ -12,8 +12,8 @@ trait CreatesApplication
      */
     public function createApplication(): Application
     {
-        // phpcs:ignore Magento2.Security.IncludeFile -- Safe: bootstrapping Laravel application with hardcoded path
-        $app = require __DIR__.'/../bootstrap/app.php';
+        $bootstrapPath = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'bootstrap' . DIRECTORY_SEPARATOR . 'app.php';
+        $app = require $bootstrapPath;
 
         $app->make(Kernel::class)->bootstrap();
 
