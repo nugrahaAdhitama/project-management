@@ -10,6 +10,7 @@ use App\Models\TicketPriority;
 use App\Models\TicketStatus;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Session;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -38,6 +39,10 @@ class ExternalDashboard extends Component
     public $overdueTickets = 0;
     public $newTicketsThisWeek = 0;
     public $completedThisWeek = 0;
+
+    // Cache gantt data to prevent re-rendering on pagination
+    public $ganttDataCache = null;
+    public $staticDataLoaded = false;
 
     protected $paginationTheme = 'tailwind';
 
@@ -69,6 +74,7 @@ class ExternalDashboard extends Component
 
         $externalAccess->updateLastAccessed();
 
+        $this->loadStaticData();
         $this->loadDashboardData();
         $this->loadWidgetData();
     }
@@ -116,6 +122,35 @@ class ExternalDashboard extends Component
         $this->selectedPriority = null;
         $this->searchTerm = '';
         $this->resetPage();
+    }
+
+    public function loadStaticData()
+    {
+        if ($this->staticDataLoaded) {
+            return;
+        }
+
+        // Load gantt data once and cache it
+        $this->ganttDataCache = $this->generateGanttData();
+
+        // Load other static data that shouldn't change on pagination
+        $this->recentActivities = TicketHistory::whereHas('ticket', function ($q) {
+            $q->where('project_id', $this->project->id);
+        })
+            ->with(['ticket', 'status'])
+            ->orderBy('created_at', 'desc')
+            ->limit(10)
+            ->get();
+
+        $this->staticDataLoaded = true;
+    }
+
+    public function refreshGanttData()
+    {
+        // Force refresh gantt data
+        $this->ganttDataCache = null;
+        $this->ganttDataCache = $this->generateGanttData();
+        $this->dispatch('refreshGanttData');
     }
 
     public function gotoPage($page)
@@ -197,14 +232,133 @@ class ExternalDashboard extends Component
             ->orderBy('month')
             ->pluck('count', 'month')
             ->toArray();
+    }
 
-        $this->recentActivities = TicketHistory::whereHas('ticket', function ($q) {
-            $q->where('project_id', $this->project->id);
-        })
-            ->with(['ticket', 'status'])
-            ->orderBy('created_at', 'desc')
-            ->limit(10)
-            ->get();
+    public function getGanttDataProperty(): array
+    {
+        // Return cached gantt data to prevent re-rendering on pagination
+        if ($this->ganttDataCache !== null) {
+            return $this->ganttDataCache;
+        }
+
+        // If cache is empty, generate data
+        return $this->generateGanttData();
+    }
+
+    private function generateGanttData(): array
+    {
+        if (!$this->project) {
+            return ['data' => [], 'links' => []];
+        }
+
+        try {
+            $tickets = $this->project->tickets()
+                ->select('id', 'name', 'due_date', 'start_date', 'ticket_status_id')
+                ->with(['status:id,name,color'])
+                ->whereNotNull('due_date')
+                ->orderBy('due_date')
+                ->get();
+
+            if ($tickets->isEmpty()) {
+                return ['data' => [], 'links' => []];
+            }
+
+            $ganttTasks = [];
+            $now = Carbon::now();
+
+            foreach ($tickets as $ticket) {
+                if (!$ticket->due_date) {
+                    continue;
+                }
+
+                try {
+                    // Use start_date if available, otherwise fall back to 7 days before due_date
+                    $startDate = $ticket->start_date ? Carbon::parse($ticket->start_date) : Carbon::parse($ticket->due_date)->subDays(7);
+                    $endDate = Carbon::parse($ticket->due_date);
+
+                    if ($endDate->lte($startDate)) {
+                        $endDate = $startDate->copy()->addDays(1);
+                    }
+
+                    $progress = $this->getSimpleProgress($ticket->status->name ?? '') / 100;
+                    $isOverdue = $endDate->lt($now) && $progress < 1;
+
+                    $taskData = [
+                        'id' => (string) $ticket->id,
+                        'text' => $this->truncateName($ticket->name ?? 'Untitled Ticket'),
+                        'start_date' => $startDate->format('d-m-Y H:i'),
+                        'end_date' => $endDate->format('d-m-Y H:i'),
+                        'duration' => max(1, $startDate->diffInDays($endDate)),
+                        'progress' => max(0, min(1, $progress)),
+                        'type' => 'task',
+                        'readonly' => true,
+                        'color' => $isOverdue ? '#ef4444' : ($ticket->status->color ?? '#3b82f6'),
+                        'textColor' => '#ffffff',
+                        'status' => $ticket->status->name ?? 'Unknown',
+                        'is_overdue' => $isOverdue
+                    ];
+
+                    $ganttTasks[] = $taskData;
+
+                } catch (\Exception $e) {
+                    Log::error('Error processing ticket ' . $ticket->id . ': ' . $e->getMessage());
+                    continue;
+                }
+            }
+
+            return [
+                'data' => $ganttTasks,
+                'links' => []
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('Error generating gantt data: ' . $e->getMessage());
+            return ['data' => [], 'links' => []];
+        }
+    }
+
+    private function truncateName($name, $length = 50): string
+    {
+        return strlen($name) > $length ? substr($name, 0, $length) . '...' : $name;
+    }
+
+    private function getSimpleProgress($statusName): int
+    {
+        if (!$this->project || empty($statusName)) {
+            return 0;
+        }
+
+        try {
+            $statuses = $this->project->ticketStatuses()
+                ->orderBy('sort_order')
+                ->get();
+
+            if ($statuses->isEmpty()) {
+                return 0;
+            }
+
+            $currentStatus = $statuses->firstWhere('name', $statusName);
+
+            if (!$currentStatus) {
+                return 0;
+            }
+
+            $totalStatuses = $statuses->count();
+            $currentPosition = $statuses->search(function ($status) use ($currentStatus) {
+                return $status->id === $currentStatus->id;
+            });
+
+            if ($currentPosition === false) {
+                return 0;
+            }
+
+            $progress = (($currentPosition + 1) / $totalStatuses) * 100;
+
+            return (int) round(max(0, min(100, $progress)));
+        } catch (\Exception $e) {
+            \Log::error('Error calculating progress: ' . $e->getMessage());
+            return 0;
+        }
     }
 
     public function render()
@@ -216,7 +370,9 @@ class ExternalDashboard extends Component
     public function logout()
     {
         try {
-            auth()->logout();
+            if (auth()->check()) {
+                auth()->guard()->logout();
+            }
         } catch (\Throwable $e) {
         }
 
