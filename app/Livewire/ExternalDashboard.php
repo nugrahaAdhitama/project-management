@@ -12,9 +12,11 @@ use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Session;
+use Livewire\Attributes\Layout;
 use Livewire\Component;
 use Livewire\WithPagination;
 
+#[Layout('layouts.external')]
 class ExternalDashboard extends Component
 {
     use WithPagination;
@@ -29,22 +31,66 @@ class ExternalDashboard extends Component
     public $progressPercentage = 0;
     public $statuses;
     public $priorities;
+    public $activeTab = 'tasks';
 
     public $ticketsByStatus = [];
     public $ticketsByPriority = [];
     public $recentTickets = [];
-    public $recentActivities = [];
     public $projectStats = [];
     public $monthlyTrend = [];
     public $overdueTickets = 0;
     public $newTicketsThisWeek = 0;
     public $completedThisWeek = 0;
 
+    // Project Status properties
+    public $projectStatusData = [];
+    public $statusReportType = 'weekly'; // 'weekly' or 'overall'
+    public $currentProjectStatus = 'ontrack'; // 'ontrack', 'risk', 'delay'
+    public $previousProjectStatus = 'ontrack';
+    public $actualProgress = 0;
+    public $plannedProgress = 0;
+
     // Cache gantt data to prevent re-rendering on pagination
     public $ganttDataCache = null;
     public $staticDataLoaded = false;
 
     protected $paginationTheme = 'tailwind';
+
+    protected $listeners = ['refreshData'];
+
+    public function refreshData()
+    {
+        try {
+            // Manual refresh triggered by refresh button only
+            \Log::info('Manual refresh button clicked for project: ' . $this->project->id);
+
+            // Refresh all dynamic data
+            $this->loadDashboardData();
+            $this->loadWidgetData();
+            $this->loadProjectStatusData();
+
+            // Clear gantt cache to force refresh
+            $this->ganttDataCache = null;
+            $this->staticDataLoaded = false;
+
+            // Force reload of paginated data
+            $this->resetPage('tickets');
+            $this->resetPage('activities');
+
+            // Dispatch event to refresh gantt chart
+            $this->dispatch('refreshGanttData');
+
+            // Dispatch custom event to maintain tab state (ONLY for button refresh)
+            $this->dispatch('data-refreshed');
+
+            // Show success notification
+            session()->flash('message', 'Data refreshed successfully!');
+
+        } catch (\Exception $e) {
+            \Log::error('Error refreshing dashboard data: ' . $e->getMessage());
+            session()->flash('error', 'Failed to refresh data. Please try again.');
+        }
+    }
 
     public function mount($token)
     {
@@ -74,9 +120,13 @@ class ExternalDashboard extends Component
 
         $externalAccess->updateLastAccessed();
 
+        // Ensure default tab is 'tasks'
+        $this->activeTab = 'tasks';
+
         $this->loadStaticData();
         $this->loadDashboardData();
         $this->loadWidgetData();
+        $this->loadProjectStatusData();
     }
 
     public function getTicketsProperty()
@@ -98,22 +148,32 @@ class ExternalDashboard extends Component
             })
             ->orderBy('id', 'asc');
 
-        return $query->paginate(10);
+        return $query->paginate(10, ['*'], 'tickets');
+    }
+
+    public function getRecentActivitiesProperty()
+    {
+        return TicketHistory::whereHas('ticket', function ($q) {
+            $q->where('project_id', $this->project->id);
+        })
+            ->with(['ticket', 'status'])
+            ->orderBy('created_at', 'desc')
+            ->paginate(10, ['*'], 'activities');
     }
 
     public function updatingSelectedStatus()
     {
-        $this->resetPage();
+        $this->resetPage('tickets');
     }
 
     public function updatingSearchTerm()
     {
-        $this->resetPage();
+        $this->resetPage('tickets');
     }
 
     public function updatingSelectedPriority()
     {
-        $this->resetPage();
+        $this->resetPage('tickets');
     }
 
     public function clearFilters()
@@ -121,7 +181,7 @@ class ExternalDashboard extends Component
         $this->selectedStatus = '';
         $this->selectedPriority = null;
         $this->searchTerm = '';
-        $this->resetPage();
+        $this->resetPage('tickets');
     }
 
     public function loadStaticData()
@@ -132,15 +192,6 @@ class ExternalDashboard extends Component
 
         // Load gantt data once and cache it
         $this->ganttDataCache = $this->generateGanttData();
-
-        // Load other static data that shouldn't change on pagination
-        $this->recentActivities = TicketHistory::whereHas('ticket', function ($q) {
-            $q->where('project_id', $this->project->id);
-        })
-            ->with(['ticket', 'status'])
-            ->orderBy('created_at', 'desc')
-            ->limit(10)
-            ->get();
 
         $this->staticDataLoaded = true;
     }
@@ -153,9 +204,9 @@ class ExternalDashboard extends Component
         $this->dispatch('refreshGanttData');
     }
 
-    public function gotoPage($page)
+    public function gotoPage($page, $pageName = 'tickets')
     {
-        $this->setPage($page);
+        $this->setPage($page, $pageName);
         $this->dispatch('pagination-updated');
     }
 
@@ -236,13 +287,18 @@ class ExternalDashboard extends Component
 
     public function getGanttDataProperty(): array
     {
-        // Return cached gantt data to prevent re-rendering on pagination
+        // Check if gantt data is cached
         if ($this->ganttDataCache !== null) {
             return $this->ganttDataCache;
         }
 
-        // If cache is empty, generate data
-        return $this->generateGanttData();
+        // Use global cache for gantt data
+        $cacheKey = 'external_gantt_' . $this->project->id;
+        $this->ganttDataCache = cache()->remember($cacheKey, 300, function () {
+            return $this->generateGanttData();
+        });
+
+        return $this->ganttDataCache;
     }
 
     private function generateGanttData(): array
@@ -253,8 +309,8 @@ class ExternalDashboard extends Component
 
         try {
             $tickets = $this->project->tickets()
-                ->select('id', 'name', 'due_date', 'start_date', 'ticket_status_id')
-                ->with(['status:id,name,color'])
+                ->select('id', 'name', 'description', 'uuid', 'due_date', 'start_date', 'ticket_status_id', 'priority_id')
+                ->with(['status:id,name,color', 'priority:id,name,color', 'assignees:id,name,email'])
                 ->whereNotNull('due_date')
                 ->orderBy('due_date')
                 ->get();
@@ -283,6 +339,10 @@ class ExternalDashboard extends Component
                     $progress = $this->getSimpleProgress($ticket->status->name ?? '') / 100;
                     $isOverdue = $endDate->lt($now) && $progress < 1;
 
+                    // Format dates for modal
+                    $startDateFormatted = $startDate->format('M d, Y');
+                    $dueDateFormatted = $endDate->format('M d, Y');
+
                     $taskData = [
                         'id' => (string) $ticket->id,
                         'text' => $this->truncateName($ticket->name ?? 'Untitled Ticket'),
@@ -295,7 +355,32 @@ class ExternalDashboard extends Component
                         'color' => $isOverdue ? '#ef4444' : ($ticket->status->color ?? '#3b82f6'),
                         'textColor' => '#ffffff',
                         'status' => $ticket->status->name ?? 'Unknown',
-                        'is_overdue' => $isOverdue
+                        'is_overdue' => $isOverdue,
+                        // Include full ticket details for modal
+                        'ticket_details' => [
+                            'id' => $ticket->id,
+                            'uuid' => $ticket->uuid,
+                            'name' => $ticket->name,
+                            'description' => $ticket->description ?? 'No description available',
+                            'status' => [
+                                'name' => $ticket->status->name ?? 'Unknown',
+                                'color' => $ticket->status->color ?? '#6B7280'
+                            ],
+                            'priority' => [
+                                'name' => $ticket->priority->name ?? 'Normal',
+                                'color' => $ticket->priority->color ?? '#6B7280'
+                            ],
+                            'start_date' => $startDateFormatted,
+                            'due_date' => $dueDateFormatted,
+                            'progress_percentage' => (int) ($progress * 100),
+                            'is_overdue' => $isOverdue,
+                            'assignees' => $ticket->assignees->map(function ($user) {
+                                return [
+                                    'name' => $user->name,
+                                    'email' => $user->email
+                                ];
+                            })->toArray()
+                        ]
                     ];
 
                     $ganttTasks[] = $taskData;
@@ -361,10 +446,214 @@ class ExternalDashboard extends Component
         }
     }
 
+    public function switchTab($tabName)
+    {
+        $this->activeTab = $tabName;
+
+        // Force refresh gantt when switching to timeline
+        if ($tabName === 'timeline') {
+            $this->dispatch('switch-to-timeline');
+        }
+
+        // Load project status data when switching to status tab
+        if ($tabName === 'status') {
+            $this->loadProjectStatusData();
+        }
+    }
+
+    public function updateStatusReportType($type)
+    {
+        $this->statusReportType = $type;
+        $this->loadProjectStatusData();
+
+        // Dispatch event to update chart
+        $this->dispatch('statusReportUpdated');
+    }
+
+    public function loadProjectStatusData()
+    {
+        try {
+            if ($this->statusReportType === 'weekly') {
+                $this->projectStatusData = $this->generateWeeklyStatusData();
+            } else {
+                $this->projectStatusData = $this->generateOverallStatusData();
+            }
+
+            $this->calculateProjectStatus();
+        } catch (\Exception $e) {
+            \Log::error('Error loading project status data: ' . $e->getMessage());
+            $this->projectStatusData = [];
+        }
+    }
+
+    private function generateWeeklyStatusData(): array
+    {
+        $startDate = $this->project->start_date ? Carbon::parse($this->project->start_date) : Carbon::now()->subMonths(3);
+        $endDate = $this->project->end_date ? Carbon::parse($this->project->end_date) : Carbon::now()->addMonths(1);
+
+        $weeks = [];
+        $currentWeek = $startDate->copy()->startOfWeek();
+
+        while ($currentWeek->lte($endDate)) {
+            $weekEnd = $currentWeek->copy()->endOfWeek();
+
+            // Calculate planned progress for this week
+            $totalWeeks = $startDate->diffInWeeks($endDate);
+            $weekNumber = $startDate->diffInWeeks($currentWeek) + 1;
+            $plannedProgress = $totalWeeks > 0 ? ($weekNumber / $totalWeeks) * 100 : 0;
+
+            // Calculate actual progress (tickets completed by this week)
+            $completedTickets = $this->project->tickets()
+                ->whereHas('status', function ($q) {
+                    $q->where('is_completed', true);
+                })
+                ->where('updated_at', '<=', $weekEnd)
+                ->count();
+
+            $totalTickets = $this->project->tickets()->count();
+            $actualProgress = $totalTickets > 0 ? ($completedTickets / $totalTickets) * 100 : 0;
+
+            // Calculate deviation
+            $deviation = $actualProgress - $plannedProgress;
+
+            $weeks[] = [
+                'period' => $currentWeek->format('M d'),
+                'week_start' => $currentWeek->format('Y-m-d'),
+                'week_end' => $weekEnd->format('Y-m-d'),
+                'planned' => round($plannedProgress, 1),
+                'actual' => round($actualProgress, 1),
+                'deviation' => round($deviation, 1),
+                'status' => $this->determineWeekStatus($deviation)
+            ];
+
+            $currentWeek->addWeek();
+        }
+
+        return $weeks;
+    }
+
+    private function generateOverallStatusData(): array
+    {
+        $startDate = $this->project->start_date ? Carbon::parse($this->project->start_date) : Carbon::now()->subMonths(3);
+        $endDate = $this->project->end_date ? Carbon::parse($this->project->end_date) : Carbon::now()->addMonths(1);
+
+        $months = [];
+        $currentMonth = $startDate->copy()->startOfMonth();
+
+        while ($currentMonth->lte($endDate)) {
+            $monthEnd = $currentMonth->copy()->endOfMonth();
+
+            // Calculate planned progress for this month
+            $totalDuration = $startDate->diffInDays($endDate);
+            $daysPassed = $startDate->diffInDays($currentMonth->copy()->endOfMonth());
+            $plannedProgress = $totalDuration > 0 ? ($daysPassed / $totalDuration) * 100 : 0;
+
+            // Calculate actual progress
+            $completedTickets = $this->project->tickets()
+                ->whereHas('status', function ($q) {
+                    $q->where('is_completed', true);
+                })
+                ->where('updated_at', '<=', $monthEnd)
+                ->count();
+
+            $totalTickets = $this->project->tickets()->count();
+            $actualProgress = $totalTickets > 0 ? ($completedTickets / $totalTickets) * 100 : 0;
+
+            // Calculate deviation
+            $deviation = $actualProgress - $plannedProgress;
+
+            $months[] = [
+                'period' => $currentMonth->format('M Y'),
+                'month_start' => $currentMonth->format('Y-m-d'),
+                'month_end' => $monthEnd->format('Y-m-d'),
+                'planned' => round(max(0, min(100, $plannedProgress)), 1),
+                'actual' => round($actualProgress, 1),
+                'deviation' => round($deviation, 1),
+                'status' => $this->determineWeekStatus($deviation)
+            ];
+
+            $currentMonth->addMonth();
+        }
+
+        return $months;
+    }
+
+    private function calculateProjectStatus()
+    {
+        // Store previous status
+        $this->previousProjectStatus = $this->currentProjectStatus;
+
+        // Calculate current actual and planned progress
+        $totalTickets = $this->project->tickets()->count();
+        $completedTickets = $this->project->tickets()
+            ->whereHas('status', function ($q) {
+                $q->where('is_completed', true);
+            })->count();
+
+        $this->actualProgress = $totalTickets > 0 ? round(($completedTickets / $totalTickets) * 100, 1) : 0;
+
+        // Calculate planned progress based on timeline
+        if ($this->project->start_date && $this->project->end_date) {
+            $startDate = Carbon::parse($this->project->start_date);
+            $endDate = Carbon::parse($this->project->end_date);
+            $now = Carbon::now();
+
+            if ($now->gte($endDate)) {
+                $this->plannedProgress = 100;
+            } elseif ($now->lte($startDate)) {
+                $this->plannedProgress = 0;
+            } else {
+                $totalDuration = $startDate->diffInDays($endDate);
+                $daysPassed = $startDate->diffInDays($now);
+                $this->plannedProgress = $totalDuration > 0 ? round(($daysPassed / $totalDuration) * 100, 1) : 0;
+            }
+        } else {
+            $this->plannedProgress = $this->actualProgress; // If no timeline, assume on track
+        }
+
+        // Determine current status
+        $deviation = $this->actualProgress - $this->plannedProgress;
+        $this->currentProjectStatus = $this->determineWeekStatus($deviation);
+    }
+
+    private function determineWeekStatus($deviation): string
+    {
+        if ($deviation >= 0) {
+            return 'ontrack'; // Green - on track or ahead
+        } elseif ($deviation >= -10) {
+            return 'risk'; // Yellow - risk of delay (within 10% behind)
+        } else {
+            return 'delay'; // Red - significant delay (more than 10% behind)
+        }
+    }
+
+    public function exportGanttData()
+    {
+        try {
+            $ganttData = $this->ganttData;
+
+            // Log export activity
+            \Log::info('Gantt chart export requested for project: ' . $this->project->id);
+
+            // Return the gantt data for frontend processing
+            return response()->json([
+                'success' => true,
+                'data' => $ganttData,
+                'project_name' => $this->project->name,
+                'export_timestamp' => now()->toISOString()
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error exporting gantt data: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to export gantt data'
+            ], 500);
+        }
+    }
     public function render()
     {
-        return view('livewire.external-dashboard')
-            ->layout('layouts.external');
+        return view('livewire.external-dashboard');
     }
 
     public function logout()
