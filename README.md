@@ -88,8 +88,11 @@ A Laravel Filament 3 application for managing projects with ticket management an
    php artisan shield:install
    php artisan shield:super-admin
    ```
-
-9. Start the development server:
+9. Compile assets:
+   ```
+   npm run dev
+   ```
+10. Start the development server:
    ```
    php artisan serve
    ```

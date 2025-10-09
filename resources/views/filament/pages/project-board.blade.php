@@ -31,26 +31,28 @@
             x-transition:leave-end="opacity-0 transform -translate-y-2"
         >
             <x-filament::section>
-                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+                <div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
                     <h2 class="text-lg font-medium text-gray-900 dark:text-white">
                         Choose Project
                     </h2>
                     
-                    <div class="w-full sm:w-auto">
-                        <x-filament::input.wrapper>
-                            <x-filament::input.select
-                                wire:model.live="selectedProjectId"
-                                class="w-full"
-                                @change="showProjectSelector = false"
-                            >
-                                <option value="">Select Project</option>
-                                @foreach($projects as $project)
-                                    <option value="{{ $project->id }}" {{ $selectedProjectId == $project->id ? 'selected' : '' }}>
-                                        {{ $project->name }}
-                                    </option>
-                                @endforeach
-                            </x-filament::input.select>
-                        </x-filament::input.wrapper>
+                    <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full lg:w-auto">
+                        <div class="w-full sm:w-auto">
+                            <x-filament::input.wrapper>
+                                <x-filament::input.select
+                                    wire:model.live="selectedProjectId"
+                                    class="w-full"
+                                    @change="showProjectSelector = false"
+                                >
+                                    <option value="">Select Project</option>
+                                    @foreach($projects as $project)
+                                        <option value="{{ $project->id }}" {{ $selectedProjectId == $project->id ? 'selected' : '' }}>
+                                            {{ $project->name }}
+                                        </option>
+                                    @endforeach
+                                </x-filament::input.select>
+                            </x-filament::input.wrapper>
+                        </div>
                     </div>
                 </div>
             </x-filament::section>

@@ -14,6 +14,9 @@ use App\Filament\Actions\ExportTicketsAction;
 use App\Exports\TicketsExport;
 use Maatwebsite\Excel\Facades\Excel;
 use Illuminate\Support\Facades\Storage;
+use App\Models\User;
+use Filament\Forms\Components\CheckboxList;
+use Filament\Forms\Form;
 
 class ProjectBoard extends Page
 {
@@ -41,6 +44,10 @@ class ProjectBoard extends Page
     public ?int $selectedProjectId = null;
     
     public array $sortOrders = [];
+    
+    public array $selectedUserIds = [];
+    
+    public Collection $projectUsers;
 
     public function mount($project_id = null): void
     {
@@ -53,9 +60,11 @@ class ProjectBoard extends Page
         if ($project_id) {
             $this->selectedProjectId = (int) $project_id;
             $this->selectedProject = Project::find($project_id);
+            $this->loadProjectUsers();
             $this->loadTicketStatuses();
         } else {
             $this->ticketStatuses = collect();
+            $this->projectUsers = collect();
         }
     }
 
@@ -66,6 +75,8 @@ class ProjectBoard extends Page
         } else {
             $this->selectedProject = null;
             $this->ticketStatuses = collect();
+            $this->projectUsers = collect();
+            $this->selectedUserIds = [];
             $this->redirect(static::getUrl());
         }
     }
@@ -76,11 +87,13 @@ class ProjectBoard extends Page
         $this->ticketStatuses = collect();
         $this->selectedProjectId = $projectId;
         $this->selectedProject = Project::find($projectId);
+        $this->selectedUserIds = [];
 
         if ($this->selectedProject) {
             $url = static::getUrl(['project_id' => $projectId]);
             $this->redirect($url);
 
+            $this->loadProjectUsers();
             $this->loadTicketStatuses();
         }
     }
@@ -103,6 +116,11 @@ class ProjectBoard extends Page
                         'creator:id,name'
                     ])
                     ->select('id', 'project_id', 'ticket_status_id', 'priority_id', 'name', 'description', 'uuid', 'due_date', 'created_at', 'updated_at', 'created_by')
+                    ->when(!empty($this->selectedUserIds), function ($query) {
+                        $query->whereHas('assignees', function ($assigneeQuery) {
+                            $assigneeQuery->whereIn('users.id', $this->selectedUserIds);
+                        });
+                    })
                     ->orderBy('id', 'asc');
                 }
             ])
@@ -114,6 +132,40 @@ class ProjectBoard extends Page
             $sortOrder = $this->sortOrders[$status->id] ?? 'date_created_newest';
             $status->tickets = $this->applySorting($status->tickets, $sortOrder);
         });
+    
+    }
+    
+    public function loadProjectUsers(): void
+    {
+        if (! $this->selectedProject) {
+            $this->projectUsers = collect();
+            return;
+        }
+        
+        // Get only users who are assigned to tickets in this project
+        $ticketAssigneeIds = $this->selectedProject->tickets()
+            ->with('assignees')
+            ->get()
+            ->flatMap(function ($ticket) {
+                return $ticket->assignees->pluck('id');
+            })
+            ->unique()
+            ->filter();
+            
+        $this->projectUsers = User::whereIn('id', $ticketAssigneeIds)
+            ->orderBy('name')
+            ->get();
+    }
+    
+    public function updatedSelectedUserIds(): void
+    {
+        $this->loadTicketStatuses();
+    }
+    
+    public function clearUserFilter(): void
+    {
+        $this->selectedUserIds = [];
+        $this->loadTicketStatuses();
     }
     
     public function setSortOrder($statusId, $sortOrder)
@@ -239,9 +291,45 @@ class ProjectBoard extends Page
                 ->icon('heroicon-m-arrow-path')
                 ->action('refreshBoard')
                 ->color('warning'),
-            
             ExportTicketsAction::make()
                 ->visible(fn () => $this->selectedProject !== null && auth()->user()->hasRole(['super_admin'])),
+            
+            Action::make('filter_users')
+                ->label('Filter by User')
+                ->icon('heroicon-m-user-group')
+                ->visible(fn () => $this->selectedProject !== null && $this->projectUsers->isNotEmpty())
+                ->form([
+                    CheckboxList::make('selectedUserIds')
+                        ->label('Select Users to Filter')
+                        ->options(fn () => $this->projectUsers->pluck('name', 'id')->toArray())
+                        ->columns(2)
+                        ->searchable()
+                        ->bulkToggleable()
+                ])
+                ->action(function (array $data) {
+                    $this->selectedUserIds = $data['selectedUserIds'] ?? [];
+                    $this->loadTicketStatuses();
+                    
+                    $userCount = count($this->selectedUserIds);
+                    if ($userCount > 0) {
+                        Notification::make()
+                            ->title('Filter Applied')
+                            ->body("Showing tickets for {$userCount} selected user(s)")
+                            ->success()
+                            ->send();
+                    } else {
+                        Notification::make()
+                            ->title('Filter Cleared')
+                            ->body('Showing all tickets')
+                            ->info()
+                            ->send();
+                    }
+                })
+                ->fillForm([
+                    'selectedUserIds' => $this->selectedUserIds,
+                ])
+                ->modalWidth('md')
+                ->color('info'),
         ];
     }
 
