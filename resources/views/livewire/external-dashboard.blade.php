@@ -1,4 +1,4 @@
-﻿<div class="min-h-screen bg-gray-50">
+<div class="min-h-screen bg-gray-50">
     <!-- Flash Messages -->
     @if (session('message'))
         <div class="fixed top-4 right-4 z-50 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg transition-all duration-300"
@@ -1131,6 +1131,25 @@
             background-color: #F3F4F6 !important;
         }
 
+        /* Today marker line styling */
+        .gantt_marker.today {
+            background-color: #EF4444 !important;
+            /* Red color for today line */
+            opacity: 0.8;
+            position: sticky;
+            z-index: 10;
+        }
+
+        .gantt_marker.today .gantt_marker_content {
+            background-color: #EF4444 !important;
+            color: white !important;
+            font-weight: bold;
+            font-size: 12px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            white-space: nowrap;
+        }
+
         /* Tab Layout Styles */
         .tab-button {
             border-color: transparent;
@@ -1783,11 +1802,12 @@
                 }
 
                 try {
-                    // âœ¨ Enable export plugin for Excel functionality
+                    // âœ¨ Enable export plugin for Excel functionality and marker for today line
                     gantt.plugins({
-                        export_api: true
+                        export_api: true,
+                        marker: true
                     });
-                    console.log('âœ… Export API plugin enabled');
+                    console.log('âœ… Export API and Marker plugins enabled');
 
                     // ðŸŽ¨ Configure task class template for status-based styling
                     gantt.templates.task_class = function(start, end, task) {
@@ -1986,7 +2006,17 @@
                     }
 
                     gantt.parse(processedData);
-                    console.log('dhtmlxGantt initialized successfully with', processedData.data.length, 'tasks');
+
+                    // âœ¨ Add today marker line
+                    const today = new Date();
+                    gantt.addMarker({
+                        start_date: today,
+                        css: "today",
+                        text: "Today"
+                    });
+
+                    console.log('dhtmlxGantt initialized successfully with', processedData.data.length,
+                        'tasks and today marker');
 
                 } catch (parseError) {
                     console.error('Error parsing gantt data:', parseError);
