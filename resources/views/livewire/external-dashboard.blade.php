@@ -1136,7 +1136,6 @@
             background-color: #EF4444 !important;
             /* Red color for today line */
             opacity: 0.8;
-            position: sticky;
             z-index: 10;
         }
 
