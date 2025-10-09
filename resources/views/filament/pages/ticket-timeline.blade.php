@@ -9,13 +9,14 @@
                             {{ $selectedProject ? $selectedProject->name : 'Select Project' }}
                         </h2>
                     </div>
-                    
+
                     <div class="w-full lg:w-auto">
                         <x-filament::input.wrapper>
                             <x-filament::input.select wire:model.live="projectId" class="w-full lg:min-w-[200px]">
                                 <option value="">Select Project</option>
-                                @foreach($projects as $project)
-                                    <option value="{{ $project->id }}" {{ $projectId == $project->id ? 'selected' : '' }}>
+                                @foreach ($projects as $project)
+                                    <option value="{{ $project->id }}"
+                                        {{ $projectId == $project->id ? 'selected' : '' }}>
                                         {{ $project->name }}
                                     </option>
                                 @endforeach
@@ -26,7 +27,7 @@
             </x-filament::section>
         </div>
 
-        @if($selectedProject)
+        @if ($selectedProject)
             <!-- dhtmlxGantt Chart -->
             <div class="bg-white dark:bg-gray-800 rounded-xl shadow">
                 <div class="p-4 border-b border-gray-200 dark:border-gray-700">
@@ -34,8 +35,10 @@
                         <h2 class="text-lg font-medium text-gray-900 dark:text-white">Ticket Timeline</h2>
                         <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                             </svg>
                             <span>Read Only View</span>
                         </div>
@@ -44,12 +47,13 @@
 
                 <!-- dhtmlxGantt Container -->
                 <div class="w-full">
-                    @if(count($this->ganttData['data']) > 0)
+                    @if (count($this->ganttData['data']) > 0)
                         <div id="gantt_here" style="width:100%; height:600px;"></div>
                     @else
                         <div class="flex flex-col items-center justify-center h-64 text-gray-500 gap-4">
                             <svg class="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 002 2z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 002 2z" />
                             </svg>
                             <h3 class="text-lg font-medium">No tickets with due dates</h3>
                             <p class="text-sm">Add due dates to tickets to see the timeline</p>
@@ -60,7 +64,8 @@
         @else
             <div class="flex flex-col items-center justify-center h-64 text-gray-500 gap-4">
                 <svg class="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 002 2z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 002 2z" />
                 </svg>
                 <h2 class="text-xl font-medium">Please select a project</h2>
                 <p class="text-sm">Choose a project from the dropdown to view the timeline</p>
@@ -71,6 +76,25 @@
     @push('styles')
         <link rel="stylesheet" href="https://cdn.dhtmlx.com/gantt/edge/dhtmlxgantt.css" type="text/css">
         <link rel="stylesheet" href="{{ asset('css/gantt-timeline.css') }}" type="text/css">
+        <style>
+            /* Today marker line styling */
+            .gantt_marker.today {
+                background-color: #EF4444 !important;
+                /* Red color for today line */
+                opacity: 0.8;
+                z-index: 10;
+            }
+
+            .gantt_marker.today .gantt_marker_content {
+                background-color: #EF4444 !important;
+                color: white !important;
+                font-weight: bold;
+                font-size: 12px;
+                padding: 2px 6px;
+                border-radius: 4px;
+                white-space: nowrap;
+            }
+        </style>
     @endpush
 
     @push('scripts')
@@ -80,13 +104,14 @@
                 initialized: false,
                 currentProjectId: '{{ $projectId }}'
             };
-            
+
             function getGanttData() {
                 return @json($this->ganttData ?? ['data' => [], 'links' => []]);
             }
-            
+
             function waitForGantt(callback, maxAttempts = 50) {
                 let attempts = 0;
+
                 function check() {
                     attempts++;
                     if (typeof gantt !== 'undefined' && gantt.init) {
@@ -100,9 +125,10 @@
                 }
                 check();
             }
-            
+
             function waitForContainer(callback, maxAttempts = 30) {
                 let attempts = 0;
+
                 function check() {
                     attempts++;
                     const container = document.getElementById('gantt_here');
@@ -117,7 +143,7 @@
                 }
                 check();
             }
-            
+
             function showErrorMessage(message = 'Error loading timeline') {
                 const container = document.getElementById('gantt_here');
                 if (container) {
@@ -135,7 +161,7 @@
                     `;
                 }
             }
-            
+
             function initializeGanttSafely() {
                 waitForContainer(() => {
                     waitForGantt(() => {
@@ -143,18 +169,18 @@
                     });
                 });
             }
-            
+
             document.addEventListener('DOMContentLoaded', function() {
                 console.log('DOM ready, initializing gantt safely...');
                 initializeGanttSafely();
-                
+
                 if (typeof Livewire !== 'undefined') {
                     setupLivewireListeners();
                 } else {
                     document.addEventListener('livewire:init', setupLivewireListeners);
                 }
             });
-            
+
             document.addEventListener('livewire:navigated', function() {
                 console.log('Livewire navigated, reinitializing gantt...');
                 window.ganttState.currentProjectId = '{{ $projectId }}';
@@ -172,7 +198,7 @@
                     initializeGanttSafely();
                 }, 100);
             });
-        
+
             function setupLivewireListeners() {
                 Livewire.on('refreshData', () => {
                     console.log('Refreshing gantt chart...');
@@ -180,7 +206,7 @@
                         initializeGanttSafely();
                     }, 100);
                 });
-                
+
                 Livewire.on('refreshGanttChart', () => {
                     console.log('Refreshing gantt chart after project selection...');
                     setTimeout(() => {
@@ -188,57 +214,83 @@
                     }, 200);
                 });
             }
-        
+
             function initializeGantt() {
                 try {
                     const ganttData = getGanttData();
                     console.log('Initializing with gantt data:', ganttData.data.length, 'tasks');
-                    
+
                     if (!ganttData.data || ganttData.data.length === 0) {
                         console.log('No gantt data available');
                         return;
                     }
-            
+
                     const container = document.getElementById('gantt_here');
                     if (!container) {
                         console.error('Gantt container not found');
                         throw new Error('Gantt container not found');
                     }
-                    
+
                     if (typeof gantt === 'undefined' || !gantt.init) {
                         throw new Error('dhtmlxGantt library not properly loaded');
                     }
-                    
+
                     try {
+                        // ✨ Enable marker plugin for today line
+                        gantt.plugins({
+                            marker: true
+                        });
+
                         gantt.config.date_format = "%Y-%m-%d %H:%i";
                         gantt.config.xml_date = "%Y-%m-%d %H:%i";
-                        
-                        gantt.config.scales = [
-                            {unit: "month", step: 1, format: "%F %Y"},
-                            {unit: "day", step: 1, format: "%j"}
+
+                        gantt.config.scales = [{
+                                unit: "month",
+                                step: 1,
+                                format: "%F %Y"
+                            },
+                            {
+                                unit: "day",
+                                step: 1,
+                                format: "%j"
+                            }
                         ];
-                        
+
                         gantt.config.readonly = true;
                         gantt.config.drag_move = false;
                         gantt.config.drag_resize = false;
                         gantt.config.drag_progress = false;
                         gantt.config.drag_links = false;
-                        
+
                         gantt.config.grid_width = 350;
                         gantt.config.row_height = 40;
                         gantt.config.task_height = 32;
                         gantt.config.bar_height = 24;
-                        
-                        gantt.config.columns = [
-                            {name: "text", label: "Task Name", width: 200, tree: true},
-                            {name: "status", label: "Status", width: 100, align: "center"},
-                            {name: "duration", label: "Duration", width: 50, align: "center"}
+
+                        gantt.config.columns = [{
+                                name: "text",
+                                label: "Task Name",
+                                width: 200,
+                                tree: true
+                            },
+                            {
+                                name: "status",
+                                label: "Status",
+                                width: 100,
+                                align: "center"
+                            },
+                            {
+                                name: "duration",
+                                label: "Duration",
+                                width: 50,
+                                align: "center"
+                            }
                         ];
-                        
+
                         gantt.templates.task_class = function(start, end, task) {
                             return task.is_overdue ? "overdue" : "";
                         };
-                        
+
                         gantt.templates.tooltip_text = function(start, end, task) {
                             return `<b>Task:</b> ${task.text}<br/>
                                     <b>Status:</b> ${task.status}<br/>
@@ -252,7 +304,7 @@
                         console.error('Error configuring gantt:', configError);
                         throw new Error('Failed to configure Gantt chart');
                     }
-                    
+
                     try {
                         if (!window.ganttState.initialized) {
                             gantt.init("gantt_here");
@@ -263,14 +315,14 @@
                         console.error('Error initializing gantt:', initError);
                         throw new Error('Failed to initialize Gantt chart');
                     }
-                    
+
                     try {
                         gantt.clearAll();
-                        
+
                         if (!Array.isArray(ganttData.data)) {
                             throw new Error('Invalid gantt data format: data must be an array');
                         }
-                        
+
 
                         const processedData = {
                             data: ganttData.data.map(task => {
@@ -287,7 +339,7 @@
                                         return dateStr;
                                     }
                                 };
-                                
+
                                 return {
                                     ...task,
                                     start_date: convertDate(task.start_date),
@@ -296,7 +348,7 @@
                             }),
                             links: ganttData.links || []
                         };
-                        
+
                         for (let i = 0; i < processedData.data.length; i++) {
                             const task = processedData.data[i];
                             if (!task.id || !task.text || !task.start_date || !task.end_date) {
@@ -304,15 +356,25 @@
                                 continue;
                             }
                         }
-                        
+
                         gantt.parse(processedData);
-                        console.log('dhtmlxGantt initialized successfully with', processedData.data.length, 'tasks');
-                        
+
+                        // ✨ Add today marker line
+                        const today = new Date();
+                        gantt.addMarker({
+                            start_date: today,
+                            css: "today",
+                            text: "Today"
+                        });
+
+                        console.log('dhtmlxGantt initialized successfully with', processedData.data.length,
+                            'tasks and today marker');
+
                     } catch (parseError) {
                         console.error('Error parsing gantt data:', parseError);
                         throw new Error('Failed to load Gantt data');
                     }
-                    
+
                 } catch (error) {
                     console.error('Error initializing dhtmlxGantt:', error);
                     showErrorMessage(error.message || 'Error loading timeline');
